@@ -1,0 +1,12 @@
+{
+  "name": "nodephantombrowser",
+  "private": false,
+  "version": "0.0.1",
+  "description": "abstract browser phantom",
+  "author": "Cesar Casas <cesarcasas@bsdsolutions.com.ar>",
+  "dependencies": {
+    "debug": "^2.2.0",
+    "phantom": "^0.8.3"
+  }
+
+}
