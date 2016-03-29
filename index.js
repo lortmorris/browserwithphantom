@@ -1,21 +1,24 @@
 /* eslint-disable semi */
 
+'use strict';
+
 var phantom = require('phantom');
 var utils = require('util');
 var EventEmitter = require('events').EventEmitter;
+var fdebug = require("./fdebug");
+var fs = require("fs");
+var path = require("path");
+var linerstream = require("linerstream");
 
-var debug = require("debug")("BROWSER");
-
-debug("browser library loaded");
 var events = [
-    'onResourceRequested',
-    'onResourceReceived',
+    //'onResourceRequested',
+    //'onResourceReceived',
     'onInitialized',
     'onLoadStarted',
     'onLoadFinished',
     'onUrlChanged',
-    'onNavigationRequested',
-    'onRepaintRequested',
+    //'onNavigationRequested',
+    //'onRepaintRequested',
     'onClosing',
     'onConsoleMessage',
     'onAlert',
@@ -24,65 +27,171 @@ var events = [
     'onPageCreated'
 ];
 
-function BindedReciver (self, name) {
-    function emit () {
-        self.emit(name, arguments);
-    }
-
-    return emit.bind(self);
-};
 
 
-function Browser (instanceID) {
+/**
+ * Create a instance of Browser (phantomjs wrapper).
+ * @param {string} instanceID - the instanceId (identification). Isn't passed the library will create automatic
+ * @param {object} options - the options for instance of browser.
+ * @param {integer} options.ttl - Time to live, this argument set the time for auto close (destroy) instance if no use. Default is 10 seconds.
+ * @param {string} options.screenshotFolder  - the destination folder for screenshot (.render method).
+ * @constructor
+ */
+function Browser (instanceID, options) {
     var self = this;
 
+    var options  = options || {};
+    self.options = options || {
+            ttl: 60,
+            screenshotFolder: process.cwd()+"/screenshots",
+            phantomjs: []
+        };
+
+    self.isLoaded = false;
     self.instanceID = instanceID || new Date().getTime();
     self.tabs = [];
 
-    console.log("creando debug");
-    debug = debug('debug', 'bot-api:browser', self.instanceID);
-    debug("DEBUG CREADO");
-    phantom.create(function (ph) {
-        debug('phantom craeted: ', self.instanceID);
+    self.ttl  = (options.ttl || 60) * 1000;
 
-        self.ph = ph;
-
-        ph.createPage(function (page) {
-            debug('page craeted');
-            self.page = page;
-
-            for (var i = 0; i < events.length; i++) {
-                page.set(events[i], new BindedReciver(self, events[i]));
-            }
-
-            self.emit('ready', page);
+    self.lastUse  = new Date().getTime();
 
 
-            self.on('onPageCreated', function(tab){
-                self.tabs.push(tab[0]);
-                self.page = tab[0];
-                debug("new tab opened");
-                for (var i = 0; i < events.length; i++) {
-                    tab[0].set(events[i], new BindedReciver(self, events[i]));
-                }
-            });
+    var debug = self.debug = fdebug('bot-api:browser', self.instanceID);
+    self.debug("browser init...");
 
-            page.set('onConsoleMessage', function(){
+    if(fs.existsSync(options.screenshotFolder)){
+        self.screenshotFolder = options.screenshotFolder;
+    }else{
+        self.screenshotFolder = process.cwd()+"/screenshots";
+    }
 
-                if(!self.processConsoleCMD(arguments)){
-                    debug("==================================================================================================");
-                    console.log("BROWSE CONSOLE> ", arguments);
-                    debug("==================================================================================================");
-                }
-            });
+    var params = [].concat(options.phantomjs || [], "--web-security=no");
 
 
-        });
-    });
+    phantom.create(params)
+        .then((ph) => {
+        self.debug('phantom craeted: ', self.instanceID);
+    self.ph = ph;
+    self.closed = false;
 
-    self.on('ready', function () {
-        debug('Browser ready ');
-    });
+    return ph.createPage();
+})
+.then((page) => {
+    self.debug('page craeted');
+self.page = page;
+
+
+
+var cachito = "ola a todos";
+function magickFire(event, args){
+    console.log("Jugando como loco: ", event);
+    console.log(cachito);
+    self.emit(event, args);
+};
+
+
+
+function ownBindEvents(page){
+
+    for (var i = 0; i < events.length; i++) {
+
+        page.property(events[i], function(){
+            var args = [];
+            var __IGNORE__EVENTS=["onResourceReceived", "onRepaintRequested", "onResourceRequested"];
+            for(var k in arguments) args.push(arguments[k]);
+            var evt = args.pop();
+            var str = args.join(" ");
+            //ignore some events
+            if(__IGNORE__EVENTS.indexOf(evt)==-1) console.log(evt, str);
+        }, events[i] );
+
+    }//end for
+};
+
+ownBindEvents(page);
+
+
+self.ph.process.stdout.pipe(new linerstream()).on('data', function (data) {
+    var message = data.toString('utf8').trim();
+    if(message[0]!==">"){
+
+        var pars = message.split(" ");
+        var evt = pars.shift().trim();
+
+        console.log(evt, pars.join(" "));
+
+        self.emit(evt, pars.join(" "));
+    }
+
+
+
+});
+
+
+
+self.emit('ready', page);
+
+self.on('onLoadStarted', function(){
+    self.isLoaded = false;
+});
+
+self.on('onLoadFinished', function(){
+    console.log("onLoadFinished called!");
+    self.isLoaded = true;
+});
+
+self.on('onPageCreated', function(tab){
+    self.tabs.push(tab[0]);
+    self.page = tab[0];
+    self.debug("New Tab Opened");
+    ownBindEvents(tab);
+
+});
+
+
+self.on('onConsoleMessage', function(){
+
+    console.log("onConsoleMessage: ", arguments);
+    var args = arguments;
+    if(!self.processConsoleCMD(args)){
+
+        var toString = function(){
+            var out = "";
+            for(var k in args) out+=args[k];
+            return out;
+        };
+        self.debug('FROM BROWSER CONSOLE > '+toString(args));
+    }
+});
+})
+.catch(function(err){
+    console.log("Browser isn' ready: ", err);
+    throw "Browser isn' ready: "+err.toString();
+});
+
+self.waitingReady = [];
+
+self.on('ready', function () {
+    self._isReady = true;
+    self.debug('Browser ready ');
+
+    var p;
+
+    while(p = self.waitingReady.splice(0, 1)[0]) {
+        p();
+    }
+});
+
+//check the TTL
+self.TTLCheckID = setInterval(function(){
+    var local = new Date().getTime();
+
+    if( (local-self.lastUse) > self.ttl){
+        debug("TTL done!");
+        clearInterval(self.TTLCheckID);
+        self.close();
+    }
+}, 500);
 
 
 };
@@ -97,6 +206,7 @@ utils.inherits(Browser, EventEmitter);
 Browser.prototype.processConsoleCMD = function(data){
     var browser = this;
     var input = data[0];
+
 
     var res = false;
 
@@ -113,6 +223,7 @@ Browser.prototype.processConsoleCMD = function(data){
 
         case '__PHANTOMJS_EVENT__AJAX_COMPLETE':
             browser.emit('__PHANTOMJS_EVENT__AJAX_COMPLETE', parts[1], parts[2]);
+
             res = true;
             break;
     }
@@ -137,32 +248,44 @@ Browser.prototype.waitAjaxComplete = function(){
 
 /**
  * return cookies (actual web page)
- * @returns {*}
+ * @returns {string}
  */
 Browser.prototype.getCookies = function(){
-    return this.get('cookies');
+    var self = this;
+    return new Promise((resolve, reject) =>{
+            this.property('cookies')
+            .then((cookies)=>{
+            resolve(cookies);
+})
+.catch((err)=>{
+    reject(err);
+});
+});
 };
 
 /**
- * fire event then Browser instance is ready
+ * waiting for the browser instance is ready
  * @returns {Promise}
  */
 Browser.prototype.whenReady = function () {
     var browser = this;
+    this.debug('whenReady, is closed? '+browser.closed);
 
-    return new Promise(function (resolve, reject) {
-        if (browser.closed) return reject('Browser already closed');
-        if (browser.page) return resolve();
 
-        browser.once('ready', function () {
+    if (this.closed) return Promise.reject('Browser already closed');
+    if (this._isReady) return Promise.resolve();
+
+    var p = new Promise(function (resolve, reject) {
+        browser.waitingReady.push(function () {
             resolve();
         });
     });
+
+    return p;
 };
 
-
-
 Browser.prototype.ready = Browser.prototype.whenReady;
+
 /**
  * Close the Browser instance
  * @returns {Promise}
@@ -170,14 +293,18 @@ Browser.prototype.ready = Browser.prototype.whenReady;
 Browser.prototype.close = function () {
     var browser = this;
 
+    browser.debug("Browser.close called");
     return new Promise(function (resolve) {
         browser.whenReady().then(function () {
+
+            browser.ph.process.on('exit', function(code){
+                browser.closed = true;
+                browser.debug('Browser lib closed instance');
+                resolve(code);
+            });
+
             browser.ph.exit();
-            browser.closed = true;
 
-            debug('closed');
-
-            resolve();
         }, function () {
             // whenReady error: already closed
 
@@ -188,71 +315,86 @@ Browser.prototype.close = function () {
 
 /**
  * open a website (page)
- * @param url
- * @param method (get, post, etc)
- * @param data (object with data to passed to request)
+ * @param {string} url - the url to open
+ * @param {string} method - (get, post, etc)
+ * @param {object} data -  (object with data to passed to request)
  * @returns {Promise}
  */
 Browser.prototype.open = function (url, method, data) {
     var self = this;
+    var debug = this.debug;
+
+    debug("open method called: "+url);
 
     return new Promise(function (resolve, reject) {
         if (!url) return reject('Missing URL');
         if (!method) return reject('Missing method');
 
-        self.whenReady().then(
-            function () {
-                self.page.open(url, method, data, function (status) {
-                    debug('opened %s', url);
-
-                    resolve();
-                });
+        self.whenReady()
+            .then(function () {
+                self.page.open(url, method, data)
+                    .then(function(){
+                        self.debug('page opened '+url);
+                        resolve();
+                    })
+                    .catch(function(err){
+                        reject(err);
+                    });
             },
             reject
         );
     });
 };
 
+
 /**
  * run javascript into website scope. All aditionals arguments passed will are arguments by evaluate function.
- * @param fn (function)
+ * @param {function} - the function (expression) for evaluate into phantomjs instance
  * @returns {Promise}
  */
 Browser.prototype.evaluate = function (fn) {
     var browser = this;
     var args = Array.prototype.slice.call(arguments, 1);
 
-    debug('evaluate args %s', args);
+    browser.lastUse  = new Date().getTime();
+    browser.debug('evaluate args '+ args);
 
     return new Promise(function (resolve, reject) {
-        var evalArgs = [fn, resolve].concat(args);
-        browser.whenReady().then(
-            function () {
-                browser.page.evaluate.apply(browser.page, evalArgs);
-            },
-            function(err){
-                debug('ERORR EVALUATE: %s', err)
-                reject();
-            });
-    });
+
+            var evalArgs = [fn].concat(args);
+
+            browser.whenReady()
+                .then(function () {
+                    browser.debug("EVALUATE OK "+args);
+                    return browser.page.evaluate.apply(browser.page, evalArgs);
+                })
+                .then((res)=>{
+                resolve(res);
+        })
+            .catch( (err)=>{
+            browser.debug('ERORR EVALUATE: '+ err)
+    reject(err);
+});
+});
 };
 
 
 /**
  * Go to url (open webpage)
- * @param url
+ * @param {string} url - the url to open. Asume GET method, without params
  * @returns {Promise}
  */
 Browser.prototype.browseTo = function (url) {
     var browser = this;
-
+    browser.isLoaded = false;
+    browser.lastUse  = new Date().getTime();
     return new Promise(function (resolve, reject) {
         browser.open(url, 'GET', '')
             .then(function (status) {
-                debug('opened %s', url);
+                browser.debug('browseTo '+ url+"  : "+status);
                 resolve();
             }, function(){
-                debug("Error open website: %s", url);
+                browser.debug('Error open website: '+ url);
                 reject();
             });
     });
@@ -261,9 +403,9 @@ Browser.prototype.browseTo = function (url) {
 
 
 /**
- * Click into bottom
- * @param selector (path dom)
- * @param position (is the queyr resturn more that 1 element, you can set the elements array position. By default is 0
+ * Click bottom. For example: browser.click('.btn', 2);
+ * @param {string} selector -
+ * @param {integer} position - When the selector return more than 1 posible element, you can set the element number (init 0).
  * @returns {Promise}
  */
 Browser.prototype.click = function (selector, position) {
@@ -274,43 +416,67 @@ Browser.prototype.click = function (selector, position) {
         browser
             .evaluate(
             function (selector, position) {
-                var target = document.querySelectorAll(selector);
+
+                var target = null;
+                var only = false;
+                if(selector.split(" ").length==1 && selector[0]=="#"){
+                    selector = selector.substr(1, selector.length);
+                    target  = document.getElementById(selector);
+                    only = true;
+                }else{
+                    target = document.querySelectorAll(selector);
+                }
+
+                if(!only) target  =target[position];
 
                 if (target) {
+                    target.focus();
                     var ev = document.createEvent('MouseEvents');
                     ev.initEvent('click', true, true);
-                    target[position].dispatchEvent(ev);
-                };
+                    target.dispatchEvent(ev);
+                    return true;
+                }else{
+                    return false;
+                }
 
-                return target ? target[position].innerHTML : target;
             },
             selector, position)
             .then(
             function (result) {
-                if (result === null) return reject(result);
-                debug('clicked %s', selector, result);
+                if (result === false) return reject(result);
+                browser.debug('clicked '+ selector);
                 resolve();
+            }, function(err){
+                browser.debug("error click method: "+err);
+                reject();
             }
         );
     });
 };
 
-
+/**
+ * Click into checkbox element.
+ * @param {string} - query selector
+ * @param {boolean} is - if false, not do anythink.
+ * @returns {Promise}
+ */
 Browser.prototype.check = function(selector, is){
     var browser = this;
+    var debug = browser.debug;
     return new Promise(function(resolve, reject){
         if(!is) {
-            debug("no click for check, is false or zero");
+            browser.debug('no click for check, is false or zero');
             resolve();
         } else{
             browser.click(selector, 0)
                 .then(function(){
-                    debug("check %s", selector);
+                    debug('check '+ selector);
                     resolve();
                 });
         }
     });
 };
+
 
 /**
  * inject JS into website (after onload) and catch all ajax request. Dont remove console.log, is the core off internal EVENTS!
@@ -323,7 +489,7 @@ Browser.prototype.ajaxLoad = function(){
         browser.evaluate(function(content){
 
             (function() {
-                console.log("Adding external JS");
+                console.log('Adding external JS');
                 var origOpen = XMLHttpRequest.prototype.open;
                 XMLHttpRequest.prototype.open = function() {
 
@@ -343,11 +509,10 @@ Browser.prototype.ajaxLoad = function(){
         },"")
             .then(function(){
                 resolve();
-            }, function(){
-                debug("Error 2992837");
-                reject();
+            }, function(err){
+                browser.debug('Error 2992837');
+                reject(err);
             });
-
     });
 
 
@@ -360,23 +525,39 @@ Browser.prototype.ajaxLoad = function(){
  */
 Browser.prototype.waitLoadFinish = function () {
     var browser = this;
+    var debug = browser.debug;
+    browser.lastUse  = new Date().getTime();
 
     return new Promise(function (resolve, reject) {
+        debug("listen loaded");
 
-        browser.on('onLoadFinished', function () {
-            browser.page.get('url', function (currentURL) {
+        if(browser.isLoaded){
+            debug("isLoaded preview resolve");
+            resolve();
+        }else{
+            debug("register event onLoadFinished");
 
-                browser.ajaxLoad()
-                    .then(function(){
-                        debug('LoadFINISH : %s', currentURL);
-                        resolve(currentURL);
-                        browser.removeAllListeners('onLoadFinished');
-                    });
-            });
-        });
-    });
+            browser.on('onLoadFinished', function () {
+                browser.page.property('url')
+                    .then(function (currentURL) {
+                        debug("CurrentURL:> "+currentURL);
+                        browser.ajaxLoad()
+                            .then(function(){
+                                browser.debug('LoadFINISH : '+ currentURL);
+                                resolve(currentURL);
+                                browser.removeAllListeners('onLoadFinished');
+                            })
+                            .then(function(){
+                                return browser.replaceEvents();
+                            })
+                        ;
+                    }).catch((err)=>{
+                    reject(err);
+            });//end catch
+        });//end on.onLoadfinished
+    }//end else
+});
 };
-
 
 Browser.prototype.loaded = Browser.prototype.waitLoadFinish;
 
@@ -387,32 +568,42 @@ Browser.prototype.loaded = Browser.prototype.waitLoadFinish;
  */
 Browser.prototype.waitForUrl = function (url) {
     var browser = this;
+    browser.lastUse  = new Date().getTime();
 
     return new Promise(function (resolve, reject) {
-        browser.page.get('url', function (actualUrl) {
-            if ((typeof (url) === 'string' && url === actualUrl) ||
-                (url instanceof RegExp && url.test(actualUrl))) {
-                debug('waitForUrl matched (first) %s', actualUrl);
-                return resolve();
-            }
+        browser.page.property('url')
+            .then(function (actualUrl) {
+                browser.debug("actualURL: ", actualUrl);
 
-            var listener = function () {
-                debug('waitForUrl init...');
-                browser.page.get('url', function (actualUrl) {
-                    if ((typeof (url) === 'string' && url === actualUrl) ||
-                        (url instanceof RegExp && url.test(actualUrl))) {
-                        browser.removeListener('onUrlChanged', listener);
-                        debug('waitForUrl matched %s', actualUrl);
+                if ((typeof (url) === 'string' && url === actualUrl) ||
+                    (url instanceof RegExp && url.test(actualUrl))) {
+                    browser.debug('waitForUrl matched! (first) ' + actualUrl);
+                    resolve(actualUrl);
+                }else{
 
-                        resolve();
-                    } else {
-                        debug('waitForUrl NOT matched %s with %url', actualUrl, url);
-                    }
-                });
-            };
+                    var listener = function () {
+                        browser.debug('waitForUrl init event...');
 
-            browser.once('onUrlChanged', listener);
-        });
+                        browser.page.property('url')
+                            .then(function (actualUrl) {
+                                console.log("actualUrl: ", actualUrl);
+                                if ((typeof (url) === 'string' && url === actualUrl) ||
+                                    (url instanceof RegExp && url.test(actualUrl))) {
+                                    browser.removeListener('onUrlChanged', listener);
+                                    browser.debug('waitForUrl matched '+ actualUrl);
+
+                                    resolve(actualUrl);
+                                } else {
+                                    browser.debug('waitForUrl NOT matched '+actualUrl+' with ' + url);
+                                    reject("waitForUrl NOT matched ");
+                                }
+                            });
+                    };
+
+                    browser.once('onUrlChanged', listener);
+                }//end else
+
+            });
     });
 };
 
@@ -424,31 +615,61 @@ Browser.prototype.waitForUrl = function (url) {
  */
 Browser.prototype.fillField = function (selector, value, position) {
     var browser = this;
-
     var position = position || 0;
+    var debug = browser.debug;
+    debug("fillField Called: "+selector+" : "+value);
     return new Promise(function (resolve, reject) {
         browser
             .evaluate(
             function (selector, value, position) {
-                var element = document.querySelectorAll(selector);
+                var r = null;
 
-                if (!element) return 'Invalid selector';
+                if(selector.split(" ").length==1 && selector[0]=="#"){
+                    selector  = selector.substr(1, selector.length);
+                    var element = document.getElementById(selector);
+                    if(element){
+                        element.focus();
+                        element.value = value;
+                        r= true;
 
-                element[position].value = value;
+                    }
+                    else r= false;
+                }else{
+                    var element = document.querySelectorAll(selector);
+                    if(element && element[position]){
+                        element[position].focus();
+                        element[position].value = value;
+                        r = true;
+                    }else element = null;
+
+                }
+
+                /**
+                 * After fill, fire events: blur
+                 */
+                if(element!==null){
+                    element.blur();
+                }
+
+
+                return r;
+
             },
             selector,
             value,
             position)
             .then(
-            function (error) {
-                if (error) {
-                    debug('fillField %s with %s error: %s', selector, value, error);
+            function (result) {
+                if (result===null) {
+                    browser.debug('fillField '+selector+' with '+value+' error: '+error);
                     return reject(error);
-                }
-                debug('fillField succeded for %s with value %s', selector, value);
+                }else{
+                    browser.debug('fillField succeded for '+selector+' with value '+value);
+                    resolve();
+                }//end else
 
-                resolve();
-            }
+
+            }//end function
         );
     });
 };
@@ -467,17 +688,16 @@ Browser.prototype.findText = function (selector, text, literal) {
 
     return new Promise(function (resolve, reject) {
         browser.evaluate(function (selector, text, literal) {
-            var element = document.querySelector(selector);
-            if (!element) return false;
+                var element = document.querySelector(selector);
+                if (!element) return false;
 
-            console.log("find text: ", selector, text, literal);
-            if(literal){
-                if (element.textContent == text) {return true;}
-                else {return false;}
-            }else{
-                if (element.textContent.indexOf(text) > -1) {return true;}
-                else {return false;}
-            }//end else
+                if(literal){
+                    if (element.textContent == text) {return true;}
+                    else {return false;}
+                }else{
+                    if (element.textContent.indexOf(text) > -1) {return true;}
+                    else {return false;}
+                }//end else
 
             },
             selector,
@@ -485,10 +705,10 @@ Browser.prototype.findText = function (selector, text, literal) {
             literal)
             .then(function (result) {
                 if (result)  {
-                    debug('findText %s in %s error: %s', text, selector);
+                    browser.debug('findText '+text+' in '+selector);
                     resolve(result);
                 }else{
-                    debug('findText %s in %s result: %s', text, selector, result);
+                    browser.debug('findText '+text+' in '+selector+' result: ' + result);
                     reject(result);
                 }
 
@@ -503,9 +723,12 @@ Browser.prototype.findText = function (selector, text, literal) {
  */
 Browser.prototype.fillFields = function (fields) {
     var browser = this;
+    var debug = this.debug;
 
+    debug("fillfields is called ");
     function FillFunction (browser, selector, value) {
         return function () {
+            debug("fillfield from fillFields: "+selector+" : "+value);
             return browser.fillField(selector, value);
         }
     };
@@ -533,20 +756,29 @@ Browser.prototype.fillFields = function (fields) {
  */
 Browser.prototype.screenshot = function (file) {
     var browser = this;
-
-    var path = process.cwd()+'/screenshots/';
+    var folder = browser.instanceID+"/";
+    var path = browser.screenshotFolder;
     file = file || (new Date().getTime() + '.png');
 
-    var fpath = path +file;
+    if(!fs.existsSync(path+"/"+folder)){
+        fs.mkdirSync(path+"/"+folder);
+    }
+    var fpath = path+"/"+folder+file;
+
 
     return new Promise(function(resolve, reject){
-        browser.page.render(fpath, function () {
-            debug('Screenshot created: %s ', fpath);
-            resolve(file);
-        });
-    });
+            browser.page.render(fpath)
+                .then( () => {
+                browser.debug('__SCREENSHOT__: '+fpath);
+
+            resolve(fpath, folder);
+        }).catch((err) =>{
+            reject(err);
+});//end catch
+});
 
 };
+
 /**
  * Enabled a disabled dom element
  * @param selector (is dom path)
@@ -562,11 +794,18 @@ Browser.prototype.enabled = function(selector){
             else return null;
         }, selector)
             .then(function(r){
-                debug("Enabling %s is %s", selector, r);
-                resolve();
+                if(r){
+                    browser.debug('Enabling '+selector+ ' is '+r);
+                    resolve();
+                }else{
+                    browser.debug('No found '+selector+ ' is '+r);
+                    reject("enabled: Not found: "+selector);
+                }
+
             });
     });
 };
+
 
 /**
  * Get the textContent form dom element
@@ -583,9 +822,37 @@ Browser.prototype.getText = function(selector){
             else return null;
         }, selector)
             .then(function(text){
-                resolve(text);
+                if(text) {
+                    resolve(text);
+                }else{
+                    reject("getText : not found: "+selector);
+                }
+
             });
     });
+};
+
+/**
+ * Check if a element/s exist into DOM. Everytime the method run the resolve pass like a argument true/false if exists or not the selector.
+ * If some error, the reject is called.
+ * @param selector
+ * @returns {Promise}
+ */
+Browser.prototype.exists = function(selector){
+    var browser = this;
+
+    return new Promise(function(resolve, reject){
+        browser.evaluate(function(selector){
+
+            if(document.getElementById(selector)) return true;
+            else return false;
+        }, selector)
+            .then(function(r){
+                if(r) resolve(true);
+                else resolve(false);
+            }, reject);
+    });
+
 };
 
 
@@ -595,34 +862,61 @@ Browser.prototype.getText = function(selector){
  * @param value: the value for select tag
  * @returns {Promise}
  */
-Browser.prototype.select = function(selector, value){
+Browser.prototype.select = function(selector, value, position){
     var browser = this;
-    return new Promise(function(resolve, reject){
-        browser.evaluate(function(selector, value){
-            var el = document.querySelector(selector);
-            if(!el) return false;
-            else{
-                var evt = document.createEvent("HTMLEvents");
-                evt.initEvent("change", false, true);
-                el.value = value;
-                el.dispatchEvent(evt);
+    var position = position || 0;
 
-                return true;
+    return new Promise(function(resolve, reject){
+        browser.evaluate(function(selector, value, position){
+
+            var target = null;
+            var only = false;
+
+            if(selector.split(" ").length==1 && selector[0]=="#"){
+                selector = selector.substr(1, selector.length);
+                target  = document.getElementById(selector);
+                only = true;
+            }else{
+                target = document.querySelectorAll(selector);
             }
 
-        }, selector, value)
+            if(!only) target = target[position];
+
+            if(target){
+                target.focus();
+                var evt = document.createEvent("HTMLEvents");
+                evt.initEvent("change", false, true);
+                target.value = value;
+                target.dispatchEvent(evt);
+                target.blur();
+
+                return true;
+            }else{
+                return false;
+            }
+
+        }, selector, value, position)
             .then(function(r){
                 if(r){
-                    debug("select ok %s %s", selector, value);
+                    browser.debug('select ok '+selector+' '+value);
                     resolve()
                 }else{
-                    debug("select with error %s %s %s", selector, value, r);
-                    reject()
+                    browser.debug('select with error: '+selector+' :  '+value+' '+r );
+                    reject('cant select '+value);
                 }
             });
     });
 };
 
+
+/**
+ * Select (click) a element and fill the second associate element
+ * @param {string} sel1 - query selector for the first element (a radio for example).
+ * @param {string} val1 - the value for the first select
+ * @param sel2
+ * @param val2
+ * @returns {Promise}
+ */
 Browser.prototype.selectAndFill = function(sel1, val1, sel2, val2){
     var browser = this;
     return new Promise(function(resolve, reject){
@@ -634,14 +928,105 @@ Browser.prototype.selectAndFill = function(sel1, val1, sel2, val2){
                     browser.fillField(sel2, val2)
                 })
                 .then(function(){
-                    debug('selectAndFill finish without errors');
+                    browser.debug('selectAndFill finish without errors');
                     resolve();
-                }, function(){
-                    debug('selectAndFill finish WITH ERRORS');
-                    reject();
+                }, function(err){
+                    browser.debug('selectAndFill finish WITH ERRORS');
+                    reject(err);
                 })
         }
     });
+};
+
+/**
+ * Do nothing, just return a promise
+ * @returns {Promise}
+ */
+Browser.prototype.none = function(){
+    return new Promise(function(resolve, reject){
+        resolve();
+    });
+};
+
+/**
+ * Sleep N seconds
+ * @param {integer} seconds - seconds to sleep
+ * @returns {Promise}
+ */
+Browser.prototype.sleep = function(seconds){
+    var seconds = (seconds || 1) * 1000;
+    var browser = this;
+    browser.lastUse  = new Date().getTime();
+
+    return new Promise(function(resolve, reject){
+        setTimeout(resolve, seconds);
+    })
+
+};
+
+
+Browser.prototype.replaceEvents = function(){
+    var browser  = this;
+    var debug = browser.debug;
+
+    debug("replaceEvents Called");
+
+    return new Promise(function(resolve, reject){
+        browser.evaluate(function(){
+
+            var eventsDefined = [];
+            function __get__all__events(elements){
+                for(var x=0; x<elements.length; x++){
+                    var el = elements[x];
+                    var evts = jQuery._data(el, "events")
+                    if(evts) eventsDefined.push({Event: evts, Element: el});
+
+                }//end for
+            };
+
+
+            function __bind__new__function(){
+
+                for(var x=0; x<eventsDefined.length; x++){
+                    var target = eventsDefined[x].Event;
+                    var evts = Object.keys(target);
+
+                    for(var v=0; v<evts.length; v++){
+                        var binds = Object.keys( target[ evts[v]] );
+                        for(var i=0; i<binds.length; i++){
+                            var bind = target[ evts[v ] ][binds[i]];
+                            if(bind.handler){
+                                (function(Element, bind){
+                                    var f = bind.handler;
+                                    bind.handler = function(){
+                                        return  f.apply(null, arguments);
+                                    };
+                                })(eventsDefined[x].Element, bind);
+                            }//end handler
+                        }//end for i==
+                    }//end for v
+
+                }//end for
+            };
+
+            if($ && $._data){
+                console.log("____________________________jQuery Loaded");
+                __get__all__events($("a"));
+                __get__all__events($("input"));
+                __get__all__events($("textarea"));
+                __bind__new__function();
+
+            }else{
+                console.log("_____________________________jQuery NOT LOADED!");
+            }
+
+        }).then(function(){
+            resolve();
+        }).catch(function(err){
+            reject(err);
+        });
+    });
+
 };
 
 module.exports = Browser;

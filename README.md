@@ -1,6 +1,12 @@
-# nodephatombrowser
+# Introduction
+
+Use phantomjs from Node.js is very easy now!.
 
 
+# Install
+npm install nodephatombrowser
+ 
+# Example 
 <pre>
 var browser = new require("browser");
 browser.ready()
