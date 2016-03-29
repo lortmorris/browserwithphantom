@@ -4,11 +4,11 @@ Use phantomjs from Node.js is very easy now!.
 
 
 # Install
-npm install nodephatombrowser
+npm install browserwithphantom
  
 # Example 
 <pre>
-var browser = new require("../index");
+var browser = require("browserwithphantom");
 
 browser = new browser("mytest", {ttl: 60})
 
