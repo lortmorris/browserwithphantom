@@ -1,5 +1,5 @@
 {
-  "name": "nodephatombrowser",
+  "name": "browserwithphantom",
   "version": "2.0.1",
   "description": "Use PhantomJS from Node.js very easy",
   "main": "index.js",
@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lortmorris/nodephatombrowser.git"
+    "url": "git+https://github.com/lortmorris/browserwithphantom.git"
   },
   "keywords": [
     "phantomjs",
@@ -19,9 +19,9 @@
   "author": "Cesar Casas <cesarcasas@bsdsolutions.com.ar> (https://ar.linkedin.com/in/cesarcasas)",
   "license": "SEE LICENSE IN LICENSE",
   "bugs": {
-    "url": "https://github.com/lortmorris/nodephatombrowser/issues"
+    "url": "https://github.com/lortmorris/browserwithphantom/issues"
   },
-  "homepage": "https://github.com/lortmorris/nodephatombrowser#readme",
+  "homepage": "https://github.com/lortmorris/browserwithphantom#readme",
   "dependencies": {
     "debug": "^2.2.0",
     "linerstream": "^0.1.4",
