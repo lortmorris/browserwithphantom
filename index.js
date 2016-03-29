@@ -40,7 +40,6 @@ var events = [
 function Browser (instanceID, options) {
     var self = this;
 
-    var options  = options || {};
     self.options = options || {
             ttl: 60,
             screenshotFolder: process.cwd()+"/screenshots",
@@ -70,128 +69,109 @@ function Browser (instanceID, options) {
 
     phantom.create(params)
         .then((ph) => {
-        self.debug('phantom craeted: ', self.instanceID);
-    self.ph = ph;
-    self.closed = false;
+            self.debug('phantom craeted: ', self.instanceID);
+            self.ph = ph;
+            self.closed = false;
 
-    return ph.createPage();
-})
-.then((page) => {
-    self.debug('page craeted');
-self.page = page;
-
-
-
-var cachito = "ola a todos";
-function magickFire(event, args){
-    console.log("Jugando como loco: ", event);
-    console.log(cachito);
-    self.emit(event, args);
-};
+            return ph.createPage();
+        })
+        .then((page) => {
+            self.debug('page craeted');
+            self.page = page;
 
 
+            function ownBindEvents(page){
 
-function ownBindEvents(page){
+                for (var i = 0; i < events.length; i++) {
 
-    for (var i = 0; i < events.length; i++) {
+                    page.property(events[i], function(){
+                        var args = [];
+                        var __IGNORE__EVENTS=["onResourceReceived", "onRepaintRequested", "onResourceRequested"];
+                        for(var k in arguments) args.push(arguments[k]);
+                        var evt = args.pop();
+                        var str = args.join(" ");
+                        //ignore some events
+                        if(__IGNORE__EVENTS.indexOf(evt)==-1) console.log(evt, str);
+                    }, events[i] );
 
-        page.property(events[i], function(){
-            var args = [];
-            var __IGNORE__EVENTS=["onResourceReceived", "onRepaintRequested", "onResourceRequested"];
-            for(var k in arguments) args.push(arguments[k]);
-            var evt = args.pop();
-            var str = args.join(" ");
-            //ignore some events
-            if(__IGNORE__EVENTS.indexOf(evt)==-1) console.log(evt, str);
-        }, events[i] );
+                }//end for
+            };
 
-    }//end for
-};
-
-ownBindEvents(page);
+            ownBindEvents(page);
 
 
-self.ph.process.stdout.pipe(new linerstream()).on('data', function (data) {
-    var message = data.toString('utf8').trim();
-    if(message[0]!==">"){
+            self.ph.process.stdout.pipe(new linerstream()).on('data', function (data) {
+                var message = data.toString('utf8').trim();
+                if(message[0]!==">"){
+                    var pars = message.split(" ");
+                    var evt = pars.shift().trim();
+                    self.emit(evt, pars.join(" "));
+                }
 
-        var pars = message.split(" ");
-        var evt = pars.shift().trim();
-
-        console.log(evt, pars.join(" "));
-
-        self.emit(evt, pars.join(" "));
-    }
+            });
 
 
 
-});
+            self.emit('ready', page);
+
+            self.on('onLoadStarted', function(){
+                self.isLoaded = false;
+            });
+
+            self.on('onLoadFinished', function(){
+                self.isLoaded = true;
+            });
+
+            self.on('onPageCreated', function(tab){
+                self.tabs.push(tab[0]);
+                self.page = tab[0];
+                self.debug("New Tab Opened");
+                ownBindEvents(tab);
+
+            });
 
 
+            self.on('onConsoleMessage', function(){
 
-self.emit('ready', page);
+                var args = arguments;
+                if(!self.processConsoleCMD(args)){
 
-self.on('onLoadStarted', function(){
-    self.isLoaded = false;
-});
+                    var toString = function(){
+                        var out = "";
+                        for(var k in args) out+=args[k];
+                        return out;
+                    };
+                    self.debug('FROM BROWSER CONSOLE > '+toString(args));
+                }
+            });
+        })
+        .catch(function(err){
+            throw "Browser isn' ready: "+err.toString();
+        });
 
-self.on('onLoadFinished', function(){
-    console.log("onLoadFinished called!");
-    self.isLoaded = true;
-});
+    self.waitingReady = [];
 
-self.on('onPageCreated', function(tab){
-    self.tabs.push(tab[0]);
-    self.page = tab[0];
-    self.debug("New Tab Opened");
-    ownBindEvents(tab);
+    self.on('ready', function () {
+        self._isReady = true;
+        self.debug('Browser ready ');
 
-});
+        var p;
 
-
-self.on('onConsoleMessage', function(){
-
-    console.log("onConsoleMessage: ", arguments);
-    var args = arguments;
-    if(!self.processConsoleCMD(args)){
-
-        var toString = function(){
-            var out = "";
-            for(var k in args) out+=args[k];
-            return out;
-        };
-        self.debug('FROM BROWSER CONSOLE > '+toString(args));
-    }
-});
-})
-.catch(function(err){
-    console.log("Browser isn' ready: ", err);
-    throw "Browser isn' ready: "+err.toString();
-});
-
-self.waitingReady = [];
-
-self.on('ready', function () {
-    self._isReady = true;
-    self.debug('Browser ready ');
-
-    var p;
-
-    while(p = self.waitingReady.splice(0, 1)[0]) {
-        p();
-    }
-});
+        while(p = self.waitingReady.splice(0, 1)[0]) {
+            p();
+        }
+    });
 
 //check the TTL
-self.TTLCheckID = setInterval(function(){
-    var local = new Date().getTime();
+    self.TTLCheckID = setInterval(function(){
+        var local = new Date().getTime();
 
-    if( (local-self.lastUse) > self.ttl){
-        debug("TTL done!");
-        clearInterval(self.TTLCheckID);
-        self.close();
-    }
-}, 500);
+        if( (local-self.lastUse) > self.ttl){
+            debug("TTL done!");
+            clearInterval(self.TTLCheckID);
+            self.close();
+        }
+    }, 500);
 
 
 };
@@ -253,14 +233,14 @@ Browser.prototype.waitAjaxComplete = function(){
 Browser.prototype.getCookies = function(){
     var self = this;
     return new Promise((resolve, reject) =>{
-            this.property('cookies')
+        this.property('cookies')
             .then((cookies)=>{
-            resolve(cookies);
-})
-.catch((err)=>{
-    reject(err);
-});
-});
+                resolve(cookies);
+            })
+            .catch((err)=>{
+                reject(err);
+            });
+    });
 };
 
 /**
@@ -361,21 +341,21 @@ Browser.prototype.evaluate = function (fn) {
 
     return new Promise(function (resolve, reject) {
 
-            var evalArgs = [fn].concat(args);
+        var evalArgs = [fn].concat(args);
 
-            browser.whenReady()
-                .then(function () {
-                    browser.debug("EVALUATE OK "+args);
-                    return browser.page.evaluate.apply(browser.page, evalArgs);
-                })
-                .then((res)=>{
+        browser.whenReady()
+            .then(function () {
+                browser.debug("EVALUATE OK "+args);
+                return browser.page.evaluate.apply(browser.page, evalArgs);
+            })
+            .then((res)=>{
                 resolve(res);
-        })
+            })
             .catch( (err)=>{
-            browser.debug('ERORR EVALUATE: '+ err)
-    reject(err);
-});
-});
+                browser.debug('ERORR EVALUATE: '+ err)
+                reject(err);
+            });
+    });
 };
 
 
@@ -552,11 +532,11 @@ Browser.prototype.waitLoadFinish = function () {
                             })
                         ;
                     }).catch((err)=>{
-                    reject(err);
-            });//end catch
-        });//end on.onLoadfinished
-    }//end else
-});
+                        reject(err);
+                    });//end catch
+            });//end on.onLoadfinished
+        }//end else
+    });
 };
 
 Browser.prototype.loaded = Browser.prototype.waitLoadFinish;
@@ -586,7 +566,7 @@ Browser.prototype.waitForUrl = function (url) {
 
                         browser.page.property('url')
                             .then(function (actualUrl) {
-                                console.log("actualUrl: ", actualUrl);
+
                                 if ((typeof (url) === 'string' && url === actualUrl) ||
                                     (url instanceof RegExp && url.test(actualUrl))) {
                                     browser.removeListener('onUrlChanged', listener);
@@ -767,15 +747,15 @@ Browser.prototype.screenshot = function (file) {
 
 
     return new Promise(function(resolve, reject){
-            browser.page.render(fpath)
-                .then( () => {
+        browser.page.render(fpath)
+            .then( () => {
                 browser.debug('__SCREENSHOT__: '+fpath);
 
-            resolve(fpath, folder);
-        }).catch((err) =>{
-            reject(err);
-});//end catch
-});
+                resolve(fpath, folder);
+            }).catch((err) =>{
+                reject(err);
+            });//end catch
+    });
 
 };
 
