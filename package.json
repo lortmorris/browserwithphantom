@@ -1,6 +1,6 @@
 {
   "name": "browserwithphantom",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Use PhantomJS from Node.js very easy",
   "main": "index.js",
   "scripts": {
