@@ -8,15 +8,26 @@ npm install nodephatombrowser
  
 # Example 
 <pre>
-var browser = new require("browser");
+var browser = new require("../index");
+
+browser = new browser("mytest", {ttl: 60})
+
 browser.ready()
-    .then(function(){
+    .then(()=>{
         return browser.browseTo('http://google.com');
     })
-    .then(function(){
+    .then(()=>{
         return browser.loaded();
     })
-    .then(function(){
+    .then(()=>{
         return browser.screenshot();
     })
+    .then(()=>{
+        console.log("closing...");
+       return browser.close();
+    })
+    .catch((err)=>{
+        throw err;
+    })
+
 </pre>
