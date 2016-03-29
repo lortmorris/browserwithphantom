@@ -3,15 +3,19 @@ var browser = new require("../index");
 browser = new browser("mytest", {ttl: 60})
 
 browser.ready()
-    .then(function(){
+    .then(()=>{
         return browser.browseTo('http://google.com');
     })
-    .then(function(){
+    .then(()=>{
         return browser.loaded();
     })
-    .then(function(){
+    .then(()=>{
         return browser.screenshot();
     })
-    .then(function(){
-        browser.close();
+    .then(()=>{
+        console.log("closing...");
+       return browser.close();
+    })
+    .catch((err)=>{
+        throw err;
     })

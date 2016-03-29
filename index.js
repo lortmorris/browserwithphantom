@@ -274,16 +274,18 @@ Browser.prototype.close = function () {
     var browser = this;
 
     browser.debug("Browser.close called");
-    return new Promise(function (resolve) {
+    return new Promise(function (resolve, reject) {
         browser.whenReady().then(function () {
 
             browser.ph.process.on('exit', function(code){
                 browser.closed = true;
                 browser.debug('Browser lib closed instance');
+                browser.ttl=0;
                 resolve(code);
             });
 
             browser.ph.exit();
+
 
         }, function () {
             // whenReady error: already closed
