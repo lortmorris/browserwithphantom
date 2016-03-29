@@ -1,15 +1,25 @@
 {
-  "name": "nodephantombrowser",
-  "private": false,
-  "version": "0.0.2",
-  "description": "Abstract Browser Phantom",
-  "author": "Cesar Casas <cesarcasas@bsdsolutions.com.ar>",
-  "dependencies": {
-    "debug": "^2.2.0",
-    "phantom": "^2.0.0",
-    "phantomjs-prebuilt": "^2.1.1",
-    "linerstream": "^0.1.4"
-
-  }
-
+  "name": "nodephatombrowser",
+  "version": "2.0.0",
+  "description": "Use PhantomJS from Node.js very easy",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lortmorris/nodephatombrowser.git"
+  },
+  "keywords": [
+    "phantomjs",
+    "browser",
+    "phantom",
+    "scraping"
+  ],
+  "author": "Cesar Casas <cesarcasas@bsdsolutions.com.ar> (https://ar.linkedin.com/in/cesarcasas)",
+  "license": "SEE LICENSE IN LICENSE",
+  "bugs": {
+    "url": "https://github.com/lortmorris/nodephatombrowser/issues"
+  },
+  "homepage": "https://github.com/lortmorris/nodephatombrowser#readme"
 }
