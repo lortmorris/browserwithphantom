@@ -43,7 +43,8 @@ function Browser (instanceID, options) {
     self.options = options || {
             ttl: 60,
             screenshotFolder: process.cwd()+"/screenshots",
-            phantomjs: []
+            phantomjs: [],
+            debug: null
         };
 
     self.isLoaded = false;
@@ -55,7 +56,7 @@ function Browser (instanceID, options) {
     self.lastUse  = new Date().getTime();
 
 
-    var debug = self.debug = fdebug('bot-api:browser', self.instanceID);
+    var debug = self.debug = self.options.debug || fdebug('browserwithphantom', self.instanceID);
     self.debug("browser init...");
 
     if(fs.existsSync(options.screenshotFolder)){
@@ -220,6 +221,12 @@ Browser.prototype.processConsoleCMD = function(data){
 Browser.prototype.waitAjaxComplete = function(){
     var browser  =this;
     return new Promise(function(resolve, reject){
+        //ugly fix for waitAjaxComplete
+        //todo: add ttl for this method
+        setTimeout(60*1000, function(){
+            browser.emit("__PHANTOMJS_EVENT__AJAX_COMPLETE");
+        });
+
         browser.once('__PHANTOMJS_EVENT__AJAX_COMPLETE', function(){
             resolve();
         });
