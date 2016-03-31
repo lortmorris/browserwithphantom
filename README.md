@@ -157,3 +157,9 @@ Wait for N seconds and return Promise.
     browser.sleep(2);
 ```
 
+# TODO
+* Add support for headers
+* Emulate human events when click or complete fields (speed, mouse move, etc).
+* Save report of actions
+* Add HTML struct control
+* Ignore JS Errors into webpages

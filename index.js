@@ -48,7 +48,7 @@ function Browser (instanceID, options) {
         };
 
     self.isLoaded = false;
-    self.instanceID = instanceID || new Date().getTime();
+    self.instanceID = (instanceID || new Date().getTime()).toString();
     self.tabs = [];
 
     self.ttl  = (options.ttl || 60) * 1000;
@@ -56,7 +56,7 @@ function Browser (instanceID, options) {
     self.lastUse  = new Date().getTime();
 
 
-    var debug = self.debug = self.options.debug || fdebug('browserwithphantom', self.instanceID);
+    var debug = self.debug = self.options.debug || fdebug('browser', self.instanceID);
     self.debug("browser init...");
 
     if(fs.existsSync(options.screenshotFolder)){
@@ -122,6 +122,8 @@ function Browser (instanceID, options) {
             self.on('onLoadFinished', function(){
                 self.isLoaded = true;
             });
+
+
 
             self.on('onPageCreated', function(tab){
                 self.tabs.push(tab[0]);
@@ -432,12 +434,15 @@ Browser.prototype.click = function (selector, position) {
             selector, position)
             .then(
             function (result) {
-                if (result === false) return reject(result);
-                browser.debug('clicked '+ selector);
-                resolve();
+                if (result === false) return reject("browser.click: element not found: "+selector);
+                else{
+                    browser.debug('clicked '+ selector);
+                    resolve();
+                }
+
             }, function(err){
-                browser.debug("error click method: "+err);
-                reject();
+                browser.debug("reject click method: "+err);
+                reject(err);
             }
         );
     });
@@ -522,6 +527,7 @@ Browser.prototype.waitLoadFinish = function () {
 
         if(browser.isLoaded){
             debug("isLoaded preview resolve");
+            browser.isLoaded = false;
             resolve();
         }else{
             debug("register event onLoadFinished");
@@ -533,8 +539,9 @@ Browser.prototype.waitLoadFinish = function () {
                         browser.ajaxLoad()
                             .then(function(){
                                 browser.debug('LoadFINISH : '+ currentURL);
-                                resolve(currentURL);
+                                browser.isLoaded = false;
                                 browser.removeAllListeners('onLoadFinished');
+                                resolve(currentURL);
                             })
                             .then(function(){
                                 return browser.replaceEvents();
@@ -615,21 +622,23 @@ Browser.prototype.fillField = function (selector, value, position) {
 
                 if(selector.split(" ").length==1 && selector[0]=="#"){
                     selector  = selector.substr(1, selector.length);
+
                     var element = document.getElementById(selector);
                     if(element){
                         element.focus();
                         element.value = value;
                         r= true;
 
+                    }else{
+                        r= null;
                     }
-                    else r= false;
                 }else{
                     var element = document.querySelectorAll(selector);
                     if(element && element[position]){
                         element[position].focus();
                         element[position].value = value;
                         r = true;
-                    }else element = null;
+                    }else { element = null; }
 
                 }
 
@@ -650,10 +659,10 @@ Browser.prototype.fillField = function (selector, value, position) {
             .then(
             function (result) {
                 if (result===null) {
-                    browser.debug('fillField '+selector+' with '+value+' error: '+error);
-                    return reject(error);
+                    browser.debug('browser.fillField '+selector+' error,  selector: '+selector+' not foud: ');
+                    return reject('browser.fillField '+selector+' error,  selector: '+selector+' not foud: ');
                 }else{
-                    browser.debug('fillField succeded for '+selector+' with value '+value);
+                    browser.debug('browser.fillField succeded for '+selector+' with value '+value);
                     resolve();
                 }//end else
 
@@ -698,7 +707,7 @@ Browser.prototype.findText = function (selector, text, literal) {
                     resolve(result);
                 }else{
                     browser.debug('findText '+text+' in '+selector+' result: ' + result);
-                    reject(result);
+                    reject("browser.findText: selector not found: "+selector);
                 }
 
             })
@@ -759,9 +768,9 @@ Browser.prototype.screenshot = function (file) {
         browser.page.render(fpath)
             .then( () => {
                 browser.debug('__SCREENSHOT__: '+fpath);
-
                 resolve(fpath, folder);
             }).catch((err) =>{
+                debug("Catch Browser.screenshot");
                 reject(err);
             });//end catch
     });
@@ -779,8 +788,8 @@ Browser.prototype.enabled = function(selector){
     return new Promise(function(resolve, reject){
         browser.evaluate(function(selector){
             var el = document.querySelector(selector);
-            if(el) el.disabled = null;
-            else return null;
+            if(el){ el.disabled = null; return true;}
+            else { return null; }
         }, selector)
             .then(function(r){
                 if(r){
@@ -788,7 +797,7 @@ Browser.prototype.enabled = function(selector){
                     resolve();
                 }else{
                     browser.debug('No found '+selector+ ' is '+r);
-                    reject("enabled: Not found: "+selector);
+                    reject("browser.enabled: selector not found: "+selector);
                 }
 
             });
@@ -887,11 +896,11 @@ Browser.prototype.select = function(selector, value, position){
         }, selector, value, position)
             .then(function(r){
                 if(r){
-                    browser.debug('select ok '+selector+' '+value);
+                    browser.debug('browser.selector: select ok '+selector+' '+value);
                     resolve()
                 }else{
                     browser.debug('select with error: '+selector+' :  '+value+' '+r );
-                    reject('cant select '+value);
+                    reject('browser.select: cant select '+selector+":"+value);
                 }
             });
     });
@@ -948,7 +957,10 @@ Browser.prototype.sleep = function(seconds){
     browser.lastUse  = new Date().getTime();
 
     return new Promise(function(resolve, reject){
-        setTimeout(resolve, seconds);
+        setTimeout(function(){
+            browser.debug("browser.sleep done!");
+            resolve(seconds);
+        }, seconds);
     })
 
 };
