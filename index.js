@@ -51,7 +51,7 @@ function Browser (instanceID, options) {
     self.instanceID = (instanceID || new Date().getTime()).toString();
     self.tabs = [];
 
-    self.ttl  = (options.ttl || 60) * 1000;
+    self.ttl  = (self.options.ttl || 60) * 1000;
 
     self.lastUse  = new Date().getTime();
 
@@ -59,13 +59,13 @@ function Browser (instanceID, options) {
     var debug = self.debug = self.options.debug || fdebug('browser', self.instanceID);
     self.debug("browser init...");
 
-    if(fs.existsSync(options.screenshotFolder)){
-        self.screenshotFolder = options.screenshotFolder;
+    if(fs.existsSync(self.options.screenshotFolder)){
+        self.screenshotFolder = self.options.screenshotFolder;
     }else{
         self.screenshotFolder = process.cwd()+"/screenshots";
     }
 
-    var params = [].concat(options.phantomjs || [], "--web-security=no");
+    var params = [].concat(self.options.phantomjs || [], "--web-security=no");
 
 
     phantom.create(params)
@@ -225,9 +225,9 @@ Browser.prototype.waitAjaxComplete = function(){
     return new Promise(function(resolve, reject){
         //ugly fix for waitAjaxComplete
         //todo: add ttl for this method
-        setTimeout(60*1000, function(){
+        setTimeout(function(){
             browser.emit("__PHANTOMJS_EVENT__AJAX_COMPLETE");
-        });
+        }, 60*1000);
 
         browser.once('__PHANTOMJS_EVENT__AJAX_COMPLETE', function(){
             resolve();
