@@ -42,7 +42,7 @@ function Browser (instanceID, options) {
 
     self.options = options || {
             ttl: 60,
-            screenshotFolder: process.cwd()+"/screenshots",
+            screenshotFolder: "../screenshots",
             phantomjs: [],
             debug: null
         };
