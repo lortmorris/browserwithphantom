@@ -42,7 +42,7 @@ function Browser (instanceID, options) {
 
     self.options = options || {
             ttl: 60,
-            screenshotFolder: "../screenshots",
+            screenshotFolder: process.cwd()+"/screenshots",
             phantomjs: [],
             debug: null
         };
@@ -56,7 +56,7 @@ function Browser (instanceID, options) {
     self.lastUse  = new Date().getTime();
 
 
-    var debug = self.debug = self.options.debug || fdebug('browser', self.instanceID);
+    self.debug = self.options.debug || fdebug('bot:browser', self.instanceID);
     self.debug("browser init...");
 
     if(fs.existsSync(self.options.screenshotFolder)){
@@ -144,7 +144,7 @@ function Browser (instanceID, options) {
                         for(var k in args) out+=args[k];
                         return out;
                     };
-                    self.debug('FROM BROWSER CONSOLE > '+toString(args));
+                    self.debug('FROM BROWSER CONSOLE: '+toString(args));
                 }
             });
         })
@@ -170,7 +170,7 @@ function Browser (instanceID, options) {
         var local = new Date().getTime();
 
         if( (local-self.lastUse) > self.ttl){
-            debug("TTL done!");
+            self.debug("TTL done!");
             clearInterval(self.TTLCheckID);
             self.close();
         }
@@ -410,6 +410,7 @@ Browser.prototype.click = function (selector, position) {
 
                 var target = null;
                 var only = false;
+
                 if(selector.split(" ").length==1 && selector[0]=="#"){
                     selector = selector.substr(1, selector.length);
                     target  = document.getElementById(selector);
@@ -615,42 +616,51 @@ Browser.prototype.fillField = function (selector, value, position) {
     var debug = browser.debug;
     debug("fillField Called: "+selector+" : "+value);
     return new Promise(function (resolve, reject) {
+
+        if(value==null){
+            resolve("value is null");
+            return ;
+        }
+
         browser
             .evaluate(
             function (selector, value, position) {
                 var r = null;
 
-                if(selector.split(" ").length==1 && selector[0]=="#"){
-                    selector  = selector.substr(1, selector.length);
+                try{
+                    if(selector.split(" ").length==1 && selector[0]=="#"){
+                        selector  = selector.substr(1, selector.length);
 
-                    var element = document.getElementById(selector);
-                    if(element){
-                        element.focus();
-                        element.value = value;
-                        r= true;
+                        var element = document.getElementById(selector);
+                        if(element){
+                            element.focus();
+                            element.value = value;
+                            r= true;
 
+                        }else{
+                            r= null;
+                        }
                     }else{
-                        r= null;
+                        var element = document.querySelectorAll(selector);
+                        if(element && element[position]){
+                            element[position].focus();
+                            element[position].value = value;
+                            r = true;
+                        }else { element = null; }
+
                     }
-                }else{
-                    var element = document.querySelectorAll(selector);
-                    if(element && element[position]){
-                        element[position].focus();
-                        element[position].value = value;
-                        r = true;
-                    }else { element = null; }
 
+                    /**
+                     * After fill, fire events: blur
+                     */
+                    if(element!==null){
+                        element.blur();
+                    }
+
+                    return r;
+                }catch(e){
+                    return null;
                 }
-
-                /**
-                 * After fill, fire events: blur
-                 */
-                if(element!==null){
-                    element.blur();
-                }
-
-
-                return r;
 
             },
             selector,
@@ -865,6 +875,12 @@ Browser.prototype.select = function(selector, value, position){
     var position = position || 0;
 
     return new Promise(function(resolve, reject){
+
+        if(value==null){
+            resolve("value is null");
+            return;
+        }
+
         browser.evaluate(function(selector, value, position){
 
             var target = null;
@@ -917,11 +933,12 @@ Browser.prototype.select = function(selector, value, position){
  */
 Browser.prototype.selectAndFill = function(sel1, val1, sel2, val2){
     var browser = this;
+
     return new Promise(function(resolve, reject){
         if(!val1){
             resolve();
         }else{
-            browser.select(sel1, val1)
+            browser.click(sel1)
                 .then(function(){
                     browser.fillField(sel2, val2)
                 })
@@ -929,7 +946,7 @@ Browser.prototype.selectAndFill = function(sel1, val1, sel2, val2){
                     browser.debug('selectAndFill finish without errors');
                     resolve();
                 }, function(err){
-                    browser.debug('selectAndFill finish WITH ERRORS');
+                    browser.debug('selectAndFill finish WITH ERRORS: '+err.toString());
                     reject(err);
                 })
         }

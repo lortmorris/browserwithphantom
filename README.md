@@ -2,6 +2,9 @@ Introduction
 ========
 Use phantomjs from Node.js is very easy now!.
 
+Powered by: [Cesar Casas](https://ar.linkedin.com/in/cesarcasas "Linkedin")
+
+
 # Install
 ```bash
 $ npm install browserwithphantom --save
