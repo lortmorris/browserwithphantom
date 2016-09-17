@@ -4,16 +4,7 @@ browser = new browser("mytest", {ttl: 60})
 
 browser.ready()
 	.then(()=> {
-		return browser.browseTo('http://yahoo.com');
-	})
-	.then(()=> {
-		return browser.loaded();
-	})
-	.then(()=> {
-		return browser.fillField("#UHSearchBox", "node.js");
-	})
-	.then(()=> {
-		return browser.click("#UHSearchWeb");
+		return browser.browseTo('https://ar.linkedin.com/in/cesarcasas');
 	})
 	.then(()=> {
 		return browser.loaded();
