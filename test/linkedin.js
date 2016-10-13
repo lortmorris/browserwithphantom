@@ -1,6 +1,6 @@
 var browser = new require("../index");
 
-browser = new browser("mytest", {ttl: 60})
+browser = new browser("mytest", {ttl: 60});
 
 browser.ready()
 	.then(()=> {
@@ -18,4 +18,4 @@ browser.ready()
 	})
 	.catch((err)=> {
 		throw err;
-	})
+	});
